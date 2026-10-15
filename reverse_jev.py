@@ -5,7 +5,8 @@ MODEL = os.environ.get("JEV_MODEL", "~typesafe/jev-latest")  # a decisions model
 LETTERS = "abcdefghijklmnopqrstuvwxyz"
 DIGITS = "0123456789"
 PAGE = 5
-ORDER = os.environ.get("ORDER", "alpha")  # alpha | reverse | shuffle, the order options are shown in
+MODE = os.environ.get("MODE", "flat")  # flat: every option in one question (cap is 255) | paged: five at a time
+ORDER = os.environ.get("ORDER", "shuffle")  # alpha | reverse | shuffle, the order options are shown in
 RNG = random.Random(int(os.environ.get("SEED", "0")))
 SPECIALS = [(" ", "space"), (".", "period"), (",", "comma"), ("\n", "newline"), (None, "END")]
 
@@ -39,7 +40,25 @@ def menu(page):
     return [n for _, n in pages[page]], [c for c, _ in pages[page]], len(pages)
 
 
-def pick(goal, text, log):
+def top3(probs, names):
+    best = sorted(probs, key=probs.get, reverse=True)[:3]
+    return "  ".join(f"{names.get(k, k)!r} {probs[k]:.2f}" for k in best)
+
+
+def pick_flat(goal, text, log):
+    """One question with every character offered. The key is the character itself, so labels carry no order."""
+    opts = [(c, c) for c in LETTERS + DIGITS] + [(n, c) for c, n in SPECIALS if c != " "] + [("space", " "), ("END", None)]
+    if ORDER == "shuffle":
+        RNG.shuffle(opts)
+    elif ORDER == "reverse":
+        opts.reverse()
+    chars = dict(opts)
+    ans = decide(goal, text, {k: f"the character {k!r}" for k, _ in opts})
+    log.append((len(text), len(opts), top3(ans["probabilities"], {}), ans["choice"], ans.get("confidence")))
+    return chars[ans["choice"]]
+
+
+def pick_paged(goal, text, log):
     page = 0
     while True:
         names, chars, npages = menu(page)
@@ -54,17 +73,20 @@ def pick(goal, text, log):
         ans = decide(goal, text, criteria)
         choice = ans["choice"]
         label = "more" if choice == "f" else repr(names["abcde".index(choice)])
-        log.append((len(text), page + 1, names, ans["probabilities"], label, ans.get("confidence")))
+        log.append((len(text), 6, top3(ans["probabilities"], dict(zip("abcde", names), f="more")), label, ans.get("confidence")))
         if choice != "f":
             return chars["abcde".index(choice)]
         page = (page + 1) % npages
 
 
+def pick(goal, text, log):
+    return (pick_flat if MODE == "flat" else pick_paged)(goal, text, log)
+
+
 def print_log(log):
-    print(f"\n{'chars':>5} {'page':>4}  {'options':<28} {'probabilities a-f':<34} {'picked':<9} conf")
-    for n, page, names, probs, label, conf in log:
-        p = " ".join(f"{probs.get(k, 0):.2f}" for k in "abcdef")
-        print(f"{n:>5} {page:>4}  {' '.join(names):<28} {p:<34} {label:<9} {conf}")
+    print(f"\n{'chars':>5} {'shown':>5}  {'top three (probability)':<48} {'picked':<9} conf")
+    for n, shown, top, label, conf in log:
+        print(f"{n:>5} {shown:>5}  {top:<48} {label!r:<9} {conf}")
 
 
 def main():
