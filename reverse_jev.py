@@ -1,10 +1,12 @@
 """Reverse Jev: generate text one letter at a time by asking Jev to pick from a menu."""
-import json, os, sys, urllib.request
+import json, os, random, sys, urllib.request
 
 MODEL = os.environ.get("JEV_MODEL", "~typesafe/jev-latest")  # a decisions model: /api/alpha/decisions, not chat
 LETTERS = "abcdefghijklmnopqrstuvwxyz"
 DIGITS = "0123456789"
 PAGE = 5
+ORDER = os.environ.get("ORDER", "alpha")  # alpha | reverse | shuffle, the order options are shown in
+RNG = random.Random(int(os.environ.get("SEED", "0")))
 SPECIALS = [(" ", "space"), (".", "period"), (",", "comma"), ("\n", "newline"), (None, "END")]
 
 
@@ -19,9 +21,9 @@ def load_env():
 def decide(goal, text, criteria):
     body = {"model": MODEL,
             "questions": {"next": {"type": "choice", "criteria": criteria,
-                                   "instructions": "We are writing text one character at a time. "
-                                                   "Which option is the best next character?"}},
-            "state": {"goal": goal, "text_so_far": text}}
+                                   "instructions": "The answer is being written one character at a time. "
+                                                   "What is the letter that would best continue the answer?"}},
+            "state": {"question": goal, "answer_so_far": text}}
     req = urllib.request.Request(
         "https://openrouter.ai/api/alpha/decisions", data=json.dumps(body).encode(),
         headers={"Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"],
@@ -41,6 +43,12 @@ def pick(goal, text, log):
     page = 0
     while True:
         names, chars, npages = menu(page)
+        pairs = list(zip(names, chars))
+        if ORDER == "shuffle":
+            RNG.shuffle(pairs)
+        elif ORDER == "reverse":
+            pairs.reverse()
+        names, chars = [n for n, _ in pairs], [c for _, c in pairs]
         criteria = {"abcde"[i]: f"the character {n!r}" for i, n in enumerate(names)}
         criteria["f"] = "none of these fit, show me more options"
         ans = decide(goal, text, criteria)
@@ -72,7 +80,7 @@ def main():
         print(c, end="", flush=True)
     print()
     print_log(log)
-    json.dump(log, open("decision_log.json", "w"), indent=1)
+    json.dump(log, open(os.environ.get("LOG", "decision_log.json"), "w"), indent=1)
 
 
 if __name__ == "__main__":
