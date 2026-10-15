@@ -7,6 +7,8 @@ DIGITS = "0123456789"
 PAGE = 5
 MODE = os.environ.get("MODE", "flat")  # flat: every option in one question (cap is 255) | paged: five at a time
 ORDER = os.environ.get("ORDER", "shuffle")  # alpha | reverse | shuffle, the order options are shown in
+SAMPLE = os.environ.get("SAMPLE", "1") == "1"  # flat mode: draw from the probabilities instead of taking the top one
+TEMP = float(os.environ.get("TEMP", "1"))  # below 1 sharpens the probabilities, above 1 flattens them
 RNG = random.Random(int(os.environ.get("SEED", "0")))
 SPECIALS = [(" ", "space"), (".", "period"), (",", "comma"), ("\n", "newline"), (None, "END")]
 
@@ -54,8 +56,12 @@ def pick_flat(goal, text, log):
         opts.reverse()
     chars = dict(opts)
     ans = decide(goal, text, {k: f"the character {k!r}" for k, _ in opts})
-    log.append((len(text), len(opts), top3(ans["probabilities"], {}), ans["choice"], ans.get("confidence")))
-    return chars[ans["choice"]]
+    choice = ans["choice"]
+    if SAMPLE:
+        probs = ans["probabilities"]
+        choice = RNG.choices(list(probs), weights=[p ** (1 / TEMP) for p in probs.values()])[0]
+    log.append((len(text), len(opts), top3(ans["probabilities"], {}), choice, ans.get("confidence")))
+    return chars[choice]
 
 
 def pick_paged(goal, text, log):
