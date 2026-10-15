@@ -1,7 +1,7 @@
 # reverse-jev
 
 A joke. Others have tried turning text models into decision models. This goes the other way:
-a decision model (Jev, via OpenRouter) writes text one letter at a time by picking from a menu.
+a decision model (Jev, via OpenRouter's decisions endpoint) writes text one letter at a time by picking from a menu.
 
 Each step Jev sees the text so far and picks a to e from five letters, ordered from most to
 least common in English (etaoi, nshrd, ...). Option f shows the next five, looping back round.

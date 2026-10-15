@@ -1,7 +1,7 @@
 """Reverse Jev: generate text one letter at a time by asking Jev to pick from a menu."""
 import json, os, sys, urllib.request
 
-MODEL = os.environ.get("JEV_MODEL", "~typesafe/jev-latest")
+MODEL = os.environ.get("JEV_MODEL", "~typesafe/jev-latest")  # a decisions model: /api/alpha/decisions, not chat
 LETTERS = "etaoinshrdlcumwfgypbvkjxqz"  # most to least common in English
 PAGE = 5
 SPECIALS = [(" ", "space"), (".", "period"), (",", "comma"), ("\n", "newline"), (None, "END")]
@@ -15,14 +15,17 @@ def load_env():
                 os.environ.setdefault(k, v.strip("'\""))
 
 
-def ask(prompt):
+def decide(goal, text, criteria):
+    body = {"model": MODEL,
+            "questions": {"next": {"type": "choice", "criteria": criteria,
+                                   "instructions": "We are writing text one character at a time. "
+                                                   "Which option is the best next character?"}},
+            "state": {"goal": goal, "text_so_far": text}}
     req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        data=json.dumps({"model": MODEL, "max_tokens": 200,
-                         "messages": [{"role": "user", "content": prompt}]}).encode(),
+        "https://openrouter.ai/api/alpha/decisions", data=json.dumps(body).encode(),
         headers={"Authorization": "Bearer " + os.environ["OPENROUTER_API_KEY"],
                  "Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(req))["choices"][0]["message"]["content"] or ""
+    return json.load(urllib.request.urlopen(req))["answers"]["next"]["choice"]
 
 
 def menu(page):
@@ -37,19 +40,11 @@ def pick(goal, text):
     page = 0
     while True:
         names, chars, npages = menu(page)
-        opts = "\n".join(f"{'abcde'[i]}: {n!r}" for i, n in enumerate(names))
-        prompt = (f"We are writing this together one character at a time. Goal: {goal}\n"
-                  f"Text so far: {text!r}\n\nPick the next character:\n{opts}\n"
-                  "f: none of these, show me more options\n"
-                  "Reply with a single letter, a to f.")
-        for _ in range(3):
-            ans = ask(prompt).strip().lower()[:1]
-            if ans in "abcdef" and ans:
-                break
-        else:
-            ans = "f"
+        criteria = {"abcde"[i]: f"the character {n!r}" for i, n in enumerate(names)}
+        criteria["f"] = "none of these fit, show me more options"
+        ans = decide(goal, text, criteria)
         if ans != "f":
-            return chars['abcde'.index(ans)] if 'abcde'.index(ans) < len(chars) else ""
+            return chars["abcde".index(ans)]
         page = (page + 1) % npages
 
 
